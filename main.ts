@@ -28,7 +28,7 @@ Deno.serve(async (req) => {
       <!DOCTYPE html>
       <html lang="en">
       <head>
-        <title>Bunny Stream Uploader</title>
+        <title>Bunny Final Uploader</title>
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <style>
           body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #f4f7f6; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
@@ -37,15 +37,15 @@ Deno.serve(async (req) => {
           p { color: #636e72; font-size: 14px; margin-bottom: 25px; }
           
           input { width: 100%; padding: 14px; margin-bottom: 15px; box-sizing: border-box; border: 1px solid #dfe6e9; border-radius: 8px; outline: none; transition: 0.3s; font-size: 14px; }
-          input:focus { border-color: #0984e3; box-shadow: 0 0 0 3px rgba(9, 132, 227, 0.1); }
+          input:focus { border-color: #6c5ce7; box-shadow: 0 0 0 3px rgba(108, 92, 231, 0.1); }
           
-          button { width: 100%; padding: 14px; background: #0984e3; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 16px; font-weight: 600; transition: 0.2s; }
-          button:hover { background: #74b9ff; }
+          button { width: 100%; padding: 14px; background: #6c5ce7; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 16px; font-weight: 600; transition: 0.2s; }
+          button:hover { background: #a29bfe; }
           button:disabled { background: #b2bec3; cursor: not-allowed; }
 
           /* Animation & Status */
           .status-container { display: none; margin-top: 30px; }
-          .spinner { width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid #0984e3; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 15px auto; }
+          .spinner { width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid #6c5ce7; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 15px auto; }
           @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
           
           .status-text { font-size: 14px; color: #2d3436; font-weight: 500; line-height: 1.5; }
@@ -63,7 +63,7 @@ Deno.serve(async (req) => {
         <div class="card">
           <div id="formSection">
             <h2>Remote Uploader</h2>
-            <p>Upload large files to BunnyCDN seamlessly.</p>
+            <p>Optimized for large file stitching.</p>
             <form id="uploadForm">
               <input type="url" id="fileUrl" required placeholder="Paste Remote URL here..." />
               <input type="text" id="fileName" placeholder="Filename (e.g. video.mp4)" />
@@ -74,7 +74,7 @@ Deno.serve(async (req) => {
           <div class="status-container" id="statusSection">
             <div class="spinner"></div>
             <div class="status-text" id="statusText">Initializing...</div>
-            <div style="font-size: 12px; color: #b2bec3; margin-top: 5px;">Please do not close this tab.</div>
+            <div style="font-size: 12px; color: #b2bec3; margin-top: 5px;">Processing large files takes time.</div>
           </div>
 
           <div class="result-box" id="resultSection"></div>
@@ -94,7 +94,7 @@ Deno.serve(async (req) => {
             formSection.style.display = 'none';
             statusSection.style.display = 'block';
             resultSection.style.display = 'none';
-            statusText.innerText = "Connecting to server...";
+            statusText.innerText = "Connecting...";
 
             const formData = new FormData();
             formData.append('fileUrl', document.getElementById('fileUrl').value);
@@ -103,7 +103,6 @@ Deno.serve(async (req) => {
             try {
               const response = await fetch('/upload', { method: 'POST', body: formData });
               
-              // Setup Stream Reader
               const reader = response.body.getReader();
               const decoder = new TextDecoder();
               let finalBuffer = "";
@@ -114,18 +113,14 @@ Deno.serve(async (req) => {
                 
                 const chunk = decoder.decode(value, { stream: true });
                 
-                // Check if chunk contains the final JSON result
                 if (chunk.includes('{"success":') || chunk.includes('{"error":')) {
                    finalBuffer += chunk;
                 } else {
-                   // It is a progress update message
                    if(chunk.trim()) statusText.innerText = chunk;
                 }
               }
 
-              // Process Final Result
               try {
-                 // Extract JSON from buffer (incase connection closed with mixed content)
                  const jsonStr = finalBuffer.substring(finalBuffer.indexOf('{'));
                  const data = JSON.parse(jsonStr);
                  
@@ -146,14 +141,13 @@ Deno.serve(async (req) => {
                  if(finalBuffer.includes("error")) {
                     throw new Error(finalBuffer);
                  }
-                 // Fallback if JSON parsing fails but no error text found
-                 throw new Error("Stream ended unexpectedly.");
+                 throw new Error("Connection closed before final confirmation. Check your dashboard, file might be there.");
               }
 
             } catch (err) {
               statusSection.style.display = 'none';
-              formSection.style.display = 'block'; // Show form again
-              alert("Error: " + err.message);
+              formSection.style.display = 'block';
+              alert("Status: " + err.message);
             }
           });
         </script>
@@ -163,9 +157,8 @@ Deno.serve(async (req) => {
     return new Response(html, { headers: { "content-type": "text/html" } });
   }
 
-  // 2. Backend Logic (Manual Multipart + No Timeout)
+  // 2. Backend Logic
   if (req.method === "POST" && url.pathname === "/upload") {
-    // Helper to stream text back to client
     const { readable, writable } = new TransformStream();
     const writer = writable.getWriter();
     const encoder = new TextEncoder();
@@ -191,9 +184,9 @@ Deno.serve(async (req) => {
             const remoteRes = await fetch(remoteUrl);
             if (!remoteRes.body) throw new Error("Failed to fetch remote file stream.");
 
-            // Initialize S3 with Timeout Disabled
+            // Initialize S3 with EXTENDED TIMEOUT (10 Minutes)
             s3 = new S3Client({
-                region: "us-east-1", // Dummy region
+                region: "us-east-1",
                 endpoint: BUNNY_ENDPOINT,
                 credentials: {
                     accessKeyId: BUNNY_STORAGE_ZONE_NAME,
@@ -201,12 +194,12 @@ Deno.serve(async (req) => {
                 },
                 forcePathStyle: true,
                 requestHandler: new FetchHttpHandler({
-                    requestTimeout: 0, 
-                    connectionTimeout: 0
+                    requestTimeout: 600000, // 10 Minutes timeout
+                    connectionTimeout: 600000
                 })
             });
 
-            await sendUpdate("Initializing Upload...");
+            await sendUpdate("Initializing Multipart Upload...");
             const createCmd = new CreateMultipartUploadCommand({
                 Bucket: BUNNY_STORAGE_ZONE_NAME,
                 Key: fileName,
@@ -215,7 +208,6 @@ Deno.serve(async (req) => {
             const createRes = await s3.send(createCmd);
             uploadId = createRes.UploadId;
 
-            // Chunking & Upload Loop
             const reader = remoteRes.body.getReader();
             const uploadParts = [];
             let buffer = new Uint8Array(0);
@@ -237,7 +229,7 @@ Deno.serve(async (req) => {
                         const chunk = buffer.slice(0, limit);
                         buffer = buffer.slice(limit);
 
-                        // Retry Logic (3 attempts)
+                        // Chunk Upload
                         let uploaded = false;
                         let attempts = 0;
                         while (!uploaded && attempts < 3) {
@@ -257,9 +249,9 @@ Deno.serve(async (req) => {
                                 uploaded = true;
                             } catch (e) {
                                 console.error(`Error part ${partNumber}:`, e);
-                                await sendUpdate(`Part ${partNumber} failed. Retrying (${attempts}/3)...`);
+                                await sendUpdate(`Part ${partNumber} error. Retrying...`);
                                 if (attempts >= 3) throw e;
-                                await new Promise(r => setTimeout(r, 2000)); // Wait 2s
+                                await new Promise(r => setTimeout(r, 2000));
                             }
                         }
                         partNumber++;
@@ -269,16 +261,33 @@ Deno.serve(async (req) => {
                 if (done) break;
             }
 
-            await sendUpdate("Finalizing file...");
-            const completeCmd = new CompleteMultipartUploadCommand({
-                Bucket: BUNNY_STORAGE_ZONE_NAME,
-                Key: fileName,
-                UploadId: uploadId,
-                MultipartUpload: { Parts: uploadParts },
-            });
-            await s3.send(completeCmd);
+            // --- CRITICAL FIX: Final Stitching Retry Logic ---
+            await sendUpdate("Finalizing (Stitching) file... This may take a moment.");
+            
+            let finalized = false;
+            let finalAttempts = 0;
+            
+            while (!finalized && finalAttempts < 3) {
+                try {
+                    finalAttempts++;
+                    const completeCmd = new CompleteMultipartUploadCommand({
+                        Bucket: BUNNY_STORAGE_ZONE_NAME,
+                        Key: fileName,
+                        UploadId: uploadId,
+                        MultipartUpload: { Parts: uploadParts },
+                    });
+                    await s3.send(completeCmd);
+                    finalized = true;
+                } catch (completeErr) {
+                    console.error("Completion Error:", completeErr);
+                    await sendUpdate(`Stitching slow... Retrying (${finalAttempts}/3)`);
+                    
+                    // If error is "Aborted", it might be a timeout, wait 5s and try again
+                    if (finalAttempts >= 3) throw completeErr;
+                    await new Promise(r => setTimeout(r, 5000));
+                }
+            }
 
-            // Send Success JSON
             const successData = JSON.stringify({ 
                 success: true, 
                 fileName: fileName,
@@ -288,9 +297,7 @@ Deno.serve(async (req) => {
 
         } catch (err) {
             console.error("Upload Error:", err);
-            if (uploadId && s3 && fileName) {
-                try { await s3.send(new AbortMultipartUploadCommand({ Bucket: BUNNY_STORAGE_ZONE_NAME, Key: fileName, UploadId: uploadId })); } catch (e) {}
-            }
+            // Don't abort if we reached the completion phase, the file might be safe
             const errorData = JSON.stringify({ error: err.message });
             await writer.write(encoder.encode(errorData));
         } finally {
